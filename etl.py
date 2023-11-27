@@ -19,7 +19,7 @@ def process_song_data(spark, bucket_name):
     """
     Reads song-data from S3; creates song_table and artist_table; and stores them in parquet format.
     """
-    df = spark.read.json('/'.join(('s3:/', bucket_name, 'input', 'song-data', '*', '*', '*', '*.json')))
+    df = spark.read.json('/'.join(('s3:/', bucket_name, 'processed-input', 'song-data', '*', '*', '*', '*.json')))
     df.createOrReplaceTempView("song_data")
     song_table = spark.sql(
         '''
@@ -30,7 +30,6 @@ def process_song_data(spark, bucket_name):
             year,
             duration
         FROM song_data
-            WHERE song_id IS NOT NULL
         '''
     )
     song_table.write.partitionBy("year", "artist_id").parquet(
@@ -45,7 +44,6 @@ def process_song_data(spark, bucket_name):
             artist_latitude,
             artist_longitude
         FROM song_data
-            WHERE artist_id IS NOT NULL
         """
     )
     artist_table.write.parquet(path='/'.join(('s3:/', bucket_name, 'output', 'artist_table.parquet')), mode="overwrite")
@@ -55,7 +53,7 @@ def process_log_data(spark, bucket_name):
     """
     Reads log-data from S3; creates users_table, time_table and songplays_table; and stores them in parquet format.
     """
-    df = spark.read.json('/'.join(('s3:/', bucket_name, 'input', 'log-data', '*.json')))
+    df = spark.read.json('/'.join(('s3:/', bucket_name, 'processed-input', 'log-data', '*.json')))
     df.createOrReplaceTempView("log_data")
 
     # filter by actions for song plays
@@ -74,19 +72,18 @@ def process_log_data(spark, bucket_name):
     users_table = spark.sql(
         """
         SELECT
-            ld.userId              AS user_id,
-            ld.firstName,
-            ld.lastName,
+            ld.user_id,
+            ld.first_name,
+            ld.last_name,
             ld.gender,
             ld.level
         FROM log_data ld
             INNER JOIN
-                (SELECT userId, MAX(ts) as latest_activity_ts
+                (SELECT user_id, MAX(ts) as latest_activity_ts
                 FROM log_data
-                GROUP BY userId) groupped_ld
-            ON ld.userId = groupped_ld.userId
+                GROUP BY user_id) groupped_ld
+            ON ld.user_id = groupped_ld.user_id
             AND ld.ts = groupped_ld.latest_activity_ts
-        WHERE ld.userId IS NOT null
         """
     )
 
@@ -121,13 +118,13 @@ def process_log_data(spark, bucket_name):
         """
         SELECT
             ld.timestamp    AS start_time,
-            ld.userId       AS user_id,
+            ld.user_id,
             ld.level,
             st.song_id,
             st.artist_id,
-            ld.sessionId    AS session_id,
+            ld.session_id,
             ld.location,
-            ld.userAgent    AS user_agent,
+            ld.user_agent,
             year(ld.timestamp) AS year,
             month(ld.timestamp) AS month
         FROM log_data ld
@@ -149,7 +146,9 @@ def main():
     bucket_name = config['S3']['BUCKET_NAME']
     spark = create_spark_session()
     process_song_data(spark, bucket_name)
+    print("process_song_data finished")
     process_log_data(spark, bucket_name)
+    print("process_log_data finished")
     spark.stop()
 
 
